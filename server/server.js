@@ -47,6 +47,7 @@ if (!process.env.DEEPSEEK_API_KEY && !process.env.VITE_DEEPSEEK_API_KEY && proce
 }
 
 const app = express();
+app.set('trust proxy', 1);
 const PORT = 3001;
 
 // Initialize database
@@ -92,6 +93,9 @@ app.use(cors({
       'http://localhost:5173',
       'http://localhost:5174',
       'http://localhost:3000',
+      'https://deepernova.com',
+      'https://www.deepernova.com',
+      'https://indoai-sigma.vercel.app',
       process.env.FRONTEND_URL
     ].filter(Boolean);
     
