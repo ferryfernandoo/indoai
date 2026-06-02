@@ -705,7 +705,7 @@ const ChatBot = ({ onLogout, user, isAuthenticated, isGuest, onNavigate, onUpdat
   const [imageUploadInput, setImageUploadInput] = useState(null); // Ref for hidden image input
   const [attachmentQueueMinimized, setAttachmentQueueMinimized] = useState(false); // Minimize/maximize attachment queue container
 
-  const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3001');
+  const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || '/api';
   const retryIntervalRef = useRef(null);
   const messagesEndRef = useRef(null);
   const streamingIntervalRef = useRef(null);
