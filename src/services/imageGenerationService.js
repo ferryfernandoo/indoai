@@ -3,7 +3,7 @@
  * Handles image generation using TokenMix API (imagen-4-fast)
  */
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
 
 const fetchWithTimeout = (url, options, timeoutMs = 60000) => {
   const timeoutId = new Promise((_, reject) =>
