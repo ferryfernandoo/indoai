@@ -553,7 +553,7 @@ const VoiceChat = ({ onClose, userLanguage = 'id', isAuthenticated = false, isGu
       // Route based on authentication status
       if (isAuthenticated && !isGuest) {
         // Authenticated users: use backend with session tracking
-        const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+        const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || '/api';
         response = await fetch(`${apiBaseUrl}/api/chat`, {
           method: 'POST',
           headers: {
