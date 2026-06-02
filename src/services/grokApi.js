@@ -860,7 +860,7 @@ const sendMessageViaBackend = async (message, conversationHistory = [], language
       content: msg.text,
     }));
 
-  const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+  const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || '/api';
   
   // Build messages untuk backend
   const messages = [
