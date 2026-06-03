@@ -17,6 +17,8 @@ import FileTypeSelector from './FileTypeSelector';
 import ChartGenerator from './ChartGenerator';
 import StepperComponent from './StepperComponent';
 import ExecutionFlow from './ExecutionFlow';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import './ChatBot.css';
 
 // Code Structure Parser - untuk menampilkan struktur kode seperti tree
@@ -723,6 +725,7 @@ const ChatBot = ({ onLogout, user, isAuthenticated, isGuest, onNavigate, onUpdat
   const autoRetryTimeoutRef = useRef(null);
   const autoRetryCountRef = useRef(0);
   const backgroundAgentCountRef = useRef(0); // number of running background agent tasks
+  const triggeredAgentTasksRef = useRef(new Set()); // Prevent duplicate background agent execution
   const prevHasCodeRef = useRef(false);
   const manuallyNamedConversationsRef = useRef(new Set()); // Track which conversations have manual titles
   const MAX_AUTO_RETRY = 3;
@@ -764,7 +767,7 @@ const ChatBot = ({ onLogout, user, isAuthenticated, isGuest, onNavigate, onUpdat
           let downloadSummary = null;
           let cleanText = msg.text;
           
-          const downloadMatch = msg.text?.match(/\[(?:FILE_DOWNLOAD_START|FILEDOWNLOADSTART):([^:]+):([^:]+):?([^\]]*)\]/);
+          const downloadMatch = msg.text?.match(/\[(?:FILE_DOWNLOAD_START|FILEDOWNLOADSTART):(.+):([^:]+):?([^\]]*)\]/);
           if (downloadMatch) {
             downloadUrl = downloadMatch[1];
             fileName = downloadMatch[2];
@@ -2886,7 +2889,7 @@ const ChatBot = ({ onLogout, user, isAuthenticated, isGuest, onNavigate, onUpdat
     let downloadUrl = null;
     let fileName = null;
     let downloadSummary = null;
-    const downloadMatch = processedText.match(/\[(?:FILE_DOWNLOAD_START|FILEDOWNLOADSTART):([^:]+):([^:]+):?([^\]]*)\]/);
+    const downloadMatch = processedText.match(/\[(?:FILE_DOWNLOAD_START|FILEDOWNLOADSTART):(.+):([^:]+):?([^\]]*)\]/);
     if (downloadMatch) {
       downloadUrl = downloadMatch[1];
       fileName = downloadMatch[2];
@@ -3003,42 +3006,24 @@ const ChatBot = ({ onLogout, user, isAuthenticated, isGuest, onNavigate, onUpdat
       return `__CODE_BLOCK_${index}__`;
     });
     
-    // Extract markdown tables
-    const tableBlocks = [];
-    // Better regex untuk markdown table: captures complete table blocks (header + separator + data rows)
-    // Matches: | col | col | \n |---|---| \n | data | data |
-    processedText = processedText.replace(/\n([ \t]*\|.+\|[ \t]*\n)+/g, (match) => {
-      const lines = match.trim().split(/\n|\r\n/).filter(line => line.trim());
-      // Must have at least: header row + separator row, OR header + data rows
-      if (lines.length >= 2 && lines.every(line => line.includes('|'))) {
-        const tableIndex = tableBlocks.length;
-        tableBlocks.push({ type: 'table', content: match.trim() });
-        return `\n__TABLE_BLOCK_${tableIndex}__\n`;
-      }
-      return match; // Return original if not a valid table
-    });
-    
-    // Protect placeholders before markdown cleaning
+    // Protect placeholders before markdown rendering
     let processedTextWithProtection = processedText;
     const placeholderMap = new Map();
     let placeholderCounter = 0;
     
-    // Replace __CODE_BLOCK_X__, __TABLE_BLOCK_X__, __CHART_BLOCK_X__, and __FORMULA_BLOCK_X__ with safe markers
-    processedTextWithProtection = processedTextWithProtection.replace(/(__CODE_BLOCK_\d+__|__TABLE_BLOCK_\d+__|__CHART_BLOCK_\d+__|__FORMULA_BLOCK_\d+__)/g, (match) => {
+    // Replace __CODE_BLOCK_X__, __CHART_BLOCK_X__, and __FORMULA_BLOCK_X__ with safe markers
+    processedTextWithProtection = processedTextWithProtection.replace(/(__CODE_BLOCK_\d+__|__CHART_BLOCK_\d+__|__FORMULA_BLOCK_\d+__)/g, (match) => {
       const safeMarker = `<<PLACEHOLDER_${placeholderCounter}>>`;
       placeholderMap.set(safeMarker, match);
       placeholderCounter++;
       return safeMarker;
     });
     
-    // Clean markdown from non-code text
+    // Normalize separator lines like --- so they become explicit paragraphs
     let cleanedText = processedTextWithProtection
-      .replace(/\*\*([^*]+)\*\*/g, '$1')
-      .replace(/\*([^*]+)\*/g, '$1')
-      .replace(/__([^_]+)__/g, '$1')
-      .replace(/_(.*?)_/g, '$1')
-      .replace(/~~(.*?)~~/g, '$1')
-      .replace(/`([^`]+)`/g, '$1')
+      .replace(/\n-{3,}\n/g, '\n\n---\n\n')
+      .replace(/\n_{3,}\n/g, '\n\n---\n\n')
+      .replace(/\n\*{3,}\n/g, '\n\n---\n\n')
       .trim();
     
     // Restore placeholders after markdown cleaning
@@ -3052,13 +3037,43 @@ const ChatBot = ({ onLogout, user, isAuthenticated, isGuest, onNavigate, onUpdat
       .replace(/\n_{3,}\n/g, '\n\n---\n\n')
       .replace(/\n\*{3,}\n/g, '\n\n---\n\n');
 
-    // Restore code blocks, tables, and formulas with proper formatting
+    // Restore code blocks and formulas with proper formatting
     const result = [];
-    const parts = cleanedText.split(/(__CODE_BLOCK_\d+__|__TABLE_BLOCK_\d+__|__CHART_BLOCK_\d+__|__FORMULA_BLOCK_\d+__)/g);
+    const parts = cleanedText.split(/(__CODE_BLOCK_\d+__|__CHART_BLOCK_\d+__|__FORMULA_BLOCK_\d+__)/g);
     
+    const renderMarkdownSegment = (markdownText, key) => (
+      <div key={key} className="message-paragraph">
+        <ReactMarkdown
+          remarkPlugins={[remarkGfm]}
+          components={{
+            a: ({ href, children }) => (
+              <a href={href} target="_blank" rel="noreferrer" className="message-link">
+                {children}
+              </a>
+            ),
+            code: ({ inline, className, children, ...props }) => (
+              inline ? (
+                <code className="inline-code">{children}</code>
+              ) : (
+                <pre className="code-block"><code className={className}>{children}</code></pre>
+              )
+            ),
+            li: ({ children }) => <li className="message-list-item">{children}</li>,
+            ul: ({ children }) => <ul className="message-list">{children}</ul>,
+            ol: ({ children }) => <ol className="message-list">{children}</ol>,
+            table: ({ children }) => <div className="table-container"><table className="markdown-table">{children}</table></div>,
+            th: ({ children }) => <th>{children}</th>,
+            td: ({ children }) => <td>{children}</td>,
+            img: ({ src, alt }) => <img src={src} alt={alt} className="inline-markdown-image" />,
+          }}
+        >
+          {markdownText}
+        </ReactMarkdown>
+      </div>
+    );
+
     for (const part of parts) {
       const codeMatch = part.match(/__CODE_BLOCK_(\d+)__/);
-      const tableMatch = part.match(/__TABLE_BLOCK_(\d+)__/);
       const chartMatch = part.match(/__CHART_BLOCK_(\d+)__/);
       const formulaMatch = part.match(/__FORMULA_BLOCK_(\d+)__/);
       
@@ -3165,161 +3180,16 @@ const ChatBot = ({ onLogout, user, isAuthenticated, isGuest, onNavigate, onUpdat
             />
           );
         }
-      } else if (tableMatch) {
-        const tableData = tableBlocks[parseInt(tableMatch[1])];
-        const lines = tableData.content
-          .trim()
-          .split(/\n|\r\n/)
-          .map(line => line.trim())
-          .filter(line => line.trim() && line.includes('|'));
-        
-        // Helper function to parse table row
-        const parseTableRow = (line) => {
-          // Split by | and filter out leading/trailing empty cells
-          return line
-            .split('|')
-            .slice(1, -1) // Remove first and last empty cells from split
-            .map(cell => {
-              // Clean markdown from cells
-              return cell
-                .replace(/\*\*([^*]+)\*\*/g, '$1') // bold
-                .replace(/\*([^*]+)\*/g, '$1') // italic
-                .replace(/__(.*?)__/g, '$1') // bold underscore
-                .replace(/_(.*?)_/g, '$1') // italic underscore
-                .replace(/~~(.*?)~~/g, '$1') // strikethrough
-                .replace(/`([^`]+)`/g, '$1') // inline code
-                .trim();
-            })
-            .filter(cell => cell !== '');
-        };
-        
-        // Parse all rows
-        const allRows = lines.map(parseTableRow).filter(row => row.length > 0);
-
-        if (allRows.length >= 1) {
-          // First row is header
-          const headerRow = allRows[0];
-          
-          // Check if second row is separator (dashes/colons only)
-          const isSeparatorRow = allRows.length > 1 && 
-            allRows[1].every(cell => /^[-:\s]*$/.test(cell));
-          
-          // Data rows start after header (and separator if exists)
-          const dataStartIndex = isSeparatorRow ? 2 : 1;
-          const dataRows = allRows.slice(dataStartIndex);
-
-          result.push(
-            <div key={`table-${tableMatch[1]}`} className="table-container">
-              <table className="markdown-table">
-                <thead>
-                  <tr>
-                    {headerRow.map((cell, idx) => (
-                      <th key={idx}>{cell}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {dataRows.length > 0 ? (
-                    dataRows.map((row, rowIdx) => (
-                      <tr key={rowIdx}>
-                        {row.map((cell, colIdx) => (
-                          <td key={colIdx}>{cell}</td>
-                        ))}
-                      </tr>
-                    ))
-                  ) : (
-                    <tr>
-                      <td colSpan={headerRow.length} style={{ textAlign: 'center', padding: '20px', color: '#999' }}>
-                        Tidak ada data
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          );
-        }
       } else if (part.trim()) {
-        // Render regular text with basic formatting
-        const paragraphs = part.split('\n\n');
-        for (let i = 0; i < paragraphs.length; i++) {
-          const para = paragraphs[i].trim();
-          if (para) {
-            // Clean up any remaining placeholder markers that weren't properly replaced
-            let cleanPara = para.replace(/<<PLACEHOLDER_\d+>>/g, '');
-            
-            // Also clean up formula block markers that might have slipped through
-            cleanPara = cleanPara.replace(/__FORMULA_BLOCK_\d+__/g, '');
-            cleanPara = cleanPara.replace(/__CODE_BLOCK_\d+__/g, '');
-            cleanPara = cleanPara.replace(/__TABLE_BLOCK_\d+__/g, '');
-            cleanPara = cleanPara.replace(/__CHART_BLOCK_\d+__/g, '');
-            
-            if (cleanPara.trim()) {
-              // Handle bold text within paragraph - improved regex that handles multiline
-              // Match **text** or __text__ even across newlines
-              const separatorMatch = cleanPara.trim().match(/^(-{3,}|_{3,}|\*{3,})$/);
-              if (separatorMatch) {
-                result.push(
-                  <div key={`divider-${i}`} className="message-divider" />
-                );
-              } else {
-                const parseParagraphSegments = (text) => {
-                  const segments = [];
-                  const imageRegex = /!\[([^\]]*)\]\(([^)]+)\)/g;
-                  let lastIndex = 0;
-                  let match;
+        const cleanPart = part
+          .replace(/<<PLACEHOLDER_\d+>>/g, '')
+          .replace(/__FORMULA_BLOCK_\d+__/g, '')
+          .replace(/__CODE_BLOCK_\d+__/g, '')
+          .replace(/__CHART_BLOCK_\d+__/g, '')
+          .trim();
 
-                  while ((match = imageRegex.exec(text)) !== null) {
-                    const beforeText = text.slice(lastIndex, match.index);
-                    if (beforeText) segments.push(beforeText);
-                    segments.push({ type: 'image', alt: match[1] || 'Generated Image', src: match[2].trim() });
-                    lastIndex = match.index + match[0].length;
-                  }
-
-                  const remainingText = text.slice(lastIndex);
-                  if (remainingText) segments.push(remainingText);
-                  return segments;
-                };
-                const paragraphSegments = parseParagraphSegments(cleanPara);
-                result.push(
-                  <p key={`p-${i}`} className="message-paragraph">
-                    {paragraphSegments && paragraphSegments.map((segment, segIdx) => {
-                      if (typeof segment === 'string') {
-                        const boldSegments = segment.split(/(\*\*[\s\S]*?\*\*|__([\s\S]*?)__|###\s+(.+?)(?=\n|$))/g);
-                        return (
-                          <React.Fragment key={segIdx}>
-                            {boldSegments && boldSegments.map((subSegment, subIdx) => {
-                              if (subSegment && ((subSegment.startsWith('**') && subSegment.endsWith('**')) ||
-                                  (subSegment.startsWith('__') && subSegment.endsWith('__')))) {
-                                return <strong key={subIdx}>{subSegment.slice(2, -2)}</strong>;
-                              }
-                              if (subSegment && subSegment.startsWith('###')) {
-                                const boldText = subSegment.replace(/^###\s+/, '').trim();
-                                return <strong key={subIdx}>{boldText}</strong>;
-                              }
-                              return subSegment;
-                            })}
-                          </React.Fragment>
-                        );
-                      }
-                      if (segment && segment.type === 'image') {
-                        return (
-                          <img
-                            key={`img-${segIdx}`}
-                            src={segment.src}
-                            alt={segment.alt}
-                            className="inline-markdown-image"
-                            style={{ maxWidth: '100%', borderRadius: '8px', margin: '12px 0' }}
-                          />
-                        );
-                      }
-                      return null;
-                    })}
-                  </p>
-                );
-              }
-            }
-          }
+        if (cleanPart) {
+          result.push(renderMarkdownSegment(cleanPart, `markdown-${result.length}`));
         }
       }
     }
@@ -4365,56 +4235,63 @@ Pastikan selalu gunakan tags <reasoning></reasoning> yang tepat.`;
           }
           return updatedMessages;
         });
-        
-        // Queue agent execution asynchronously to avoid blocking
-        setTimeout(async () => {
-          // Track background agent tasks to avoid showing premature error banners
-          backgroundAgentCountRef.current += 1;
-          try {
-            console.log(`[ChatBot] Executing agent task: ${agentTaskDescription}`);
-            const userId = user?.id || 'guest';
-            
-            // Call agent endpoint
-            const response = await fetch('/api/agent/execute', {
-              method: 'POST',
-              credentials: 'include',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                task: agentTaskDescription,
-                userId: userId
-              })
-            });
-            
-            if (!response.ok) {
-              console.error(`Agent execution failed: ${response.status}`);
-              return;
-            }
-            
-            const result = await response.json();
-            console.log(`[ChatBot] Agent execution completed:`, result);
-            
-            // If file was generated, add download link to message
-            if (result.success && result.fileName && result.downloadUrl) {
-              setMessages((prevMessages) => {
-                const updatedMessages = [...prevMessages];
-                const msgIndex = updatedMessages.findIndex(m => m.id === placeholderId);
-                if (msgIndex !== -1) {
-                  updatedMessages[msgIndex] = {
-                    ...updatedMessages[msgIndex],
-                    downloadUrl: result.downloadUrl,
-                    fileName: result.fileName,
-                    agentResult: result
-                  };
-                }
-                return updatedMessages;
+
+        // Prevent duplicate triggers for the same message
+        if (triggeredAgentTasksRef.current.has(placeholderId)) {
+          console.log(`[ChatBot] Agent task already triggered for message ${placeholderId}, skipping duplicate execution`);
+        } else {
+          triggeredAgentTasksRef.current.add(placeholderId);
+
+          // Queue agent execution asynchronously to avoid blocking
+          setTimeout(async () => {
+            // Track background agent tasks to avoid showing premature error banners
+            backgroundAgentCountRef.current += 1;
+            try {
+              console.log(`[ChatBot] Executing agent task: ${agentTaskDescription}`);
+              const userId = user?.id || 'guest';
+              
+              // Call agent endpoint
+              const response = await fetch('/api/agent/execute', {
+                method: 'POST',
+                credentials: 'include',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  task: agentTaskDescription,
+                  userId: userId
+                })
               });
+              
+              if (!response.ok) {
+                console.error(`Agent execution failed: ${response.status}`);
+                return;
+              }
+              
+              const result = await response.json();
+              console.log(`[ChatBot] Agent execution completed:`, result);
+              
+              // If file was generated, add download link to message
+              if (result.success && result.fileName && result.downloadUrl) {
+                setMessages((prevMessages) => {
+                  const updatedMessages = [...prevMessages];
+                  const msgIndex = updatedMessages.findIndex(m => m.id === placeholderId);
+                  if (msgIndex !== -1) {
+                    updatedMessages[msgIndex] = {
+                      ...updatedMessages[msgIndex],
+                      downloadUrl: result.downloadUrl,
+                      fileName: result.fileName,
+                      agentResult: result
+                    };
+                  }
+                  return updatedMessages;
+                });
+              }
+            } catch (err) {
+              console.error('[ChatBot] Agent execution error:', err);
+            } finally {
+              backgroundAgentCountRef.current = Math.max(0, backgroundAgentCountRef.current - 1);
             }
-          } catch (err) {
-            console.error('[ChatBot] Agent execution error:', err);
-          } finally {
-            backgroundAgentCountRef.current = Math.max(0, backgroundAgentCountRef.current - 1);
-          }
-        }, 500);
+          }, 500);
+        }
       }
       
       // Mark message as finished streaming
