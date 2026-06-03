@@ -136,6 +136,16 @@ const VoiceChat = ({ onClose, userLanguage = 'id', isAuthenticated = false, isGu
     return null;
   };
 
+  const sanitizeVoiceText = (text) => {
+    if (!text) return text;
+    return text
+      .replace(/\bDeepseek\b/g, 'Orion')
+      .replace(/\bdeepseek\b/g, 'Orion')
+      .replace(/\bDeepseek API\b/gi, 'Orion')
+      .replace(/\bdeepseek API\b/gi, 'Orion')
+      .replace(/\bdeepseek\.com\b/gi, 'orion.ai');
+  };
+
   // Auto-apply speed berdasarkan language
   const getAutoSpeedForLanguage = (langCode) => {
     const speedMap = {
@@ -573,15 +583,12 @@ const VoiceChat = ({ onClose, userLanguage = 'id', isAuthenticated = false, isGu
           signal: abortControllerRef.current.signal,
         });
       } else {
-        // Guest users: use direct Deepseek API
-        const deepseekApiKey = import.meta.env.VITE_DEEPSEEK_API_KEY || 'sk-bf333936dd084c5f9016521b1b896610';
-        const deepseekUrl = 'https://api.deepseek.com/chat/completions';
-        
-        response = await fetch(deepseekUrl, {
+        // Guest users: use backend proxy as Orion chat interface
+        const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || '/api';
+        response = await fetch(`${apiBaseUrl}/api/chat`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${deepseekApiKey}`,
           },
           body: JSON.stringify({
             model: 'deepseek-chat',
@@ -656,7 +663,7 @@ const VoiceChat = ({ onClose, userLanguage = 'id', isAuthenticated = false, isGu
             try {
               const json = JSON.parse(line.slice(6));
               if (json.choices?.[0]?.delta?.content) {
-                const deltaText = json.choices[0].delta.content;
+                const deltaText = sanitizeVoiceText(json.choices[0].delta.content);
                 assistantMessage += deltaText;
                 textBuffer += deltaText;
 
