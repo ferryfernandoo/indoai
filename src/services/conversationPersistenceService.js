@@ -6,7 +6,17 @@
  */
 
 const STORAGE_KEY = 'chatbot_conversations';
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
+const ENV_API_BASE_URL = import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, '') || '';
+const API_BASE_URL = (typeof window !== 'undefined' && /^(localhost|127\.0\.0\.1)$/.test(window.location.hostname))
+  ? ''
+  : ENV_API_BASE_URL;
+
+const buildApiUrl = (path) => {
+  if (!path.startsWith('/')) {
+    path = `/${path}`;
+  }
+  return `${API_BASE_URL}${path}`;
+};
 
 class ConversationPersistenceService {
   /**
@@ -171,7 +181,7 @@ class ConversationPersistenceService {
    */
   static async loadFromBackend() {
     try {
-      const response = await fetch(`${API_BASE_URL}/api/conversations`, {
+      const response = await fetch(buildApiUrl('/api/conversations'), {
         method: 'GET',
         credentials: 'include',
         headers: {
@@ -251,7 +261,7 @@ class ConversationPersistenceService {
       if (publicConversations.length === 0) return true;
 
       console.log(`[ConversationPersistence] Saving ${publicConversations.length} conversations to backend...`);
-      const response = await fetch(`${API_BASE_URL}/api/conversations`, {
+      const response = await fetch(buildApiUrl('/api/conversations'), {
         method: 'POST',
         credentials: 'include',
         headers: {
@@ -279,7 +289,7 @@ class ConversationPersistenceService {
     try {
       if (this.shouldUseBackendStorage(isAuthenticated, isGuest)) {
         // For backend, just make a delete request
-        const response = await fetch(`${API_BASE_URL}/api/conversations`, {
+        const response = await fetch(buildApiUrl('/api/conversations'), {
           method: 'DELETE',
           credentials: 'include',
           headers: {
@@ -304,7 +314,7 @@ class ConversationPersistenceService {
   static async deleteConversation(conversationId, isAuthenticated, isGuest) {
     try {
       if (this.shouldUseBackendStorage(isAuthenticated, isGuest)) {
-        const response = await fetch(`${API_BASE_URL}/api/conversations/${conversationId}`, {
+        const response = await fetch(buildApiUrl(`/api/conversations/${conversationId}`), {
           method: 'DELETE',
           credentials: 'include',
           headers: {
