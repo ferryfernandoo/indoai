@@ -619,7 +619,7 @@ const ChatBot = ({ onLogout, user, isAuthenticated, isGuest, onNavigate, onUpdat
     localStorage.setItem('orion_user_name', safeName);
 
     if (isAuthenticated && user?.id) {
-      const apiUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+      const apiUrl = import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, '') || '';
       try {
         const response = await fetch(`${apiUrl}/auth/me`, {
           method: 'PUT',
@@ -707,7 +707,13 @@ const ChatBot = ({ onLogout, user, isAuthenticated, isGuest, onNavigate, onUpdat
   const [imageUploadInput, setImageUploadInput] = useState(null); // Ref for hidden image input
   const [attachmentQueueMinimized, setAttachmentQueueMinimized] = useState(false); // Minimize/maximize attachment queue container
 
-  const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || '/api';
+  const apiBaseUrl = import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, '') || '';
+  const resolveApiUrl = (path) => {
+    if (typeof window !== 'undefined' && /^(localhost|127\.0\.0\.1)$/.test(window.location.hostname)) {
+      return path;
+    }
+    return apiBaseUrl ? `${apiBaseUrl}${path}` : path;
+  };
   const retryIntervalRef = useRef(null);
   const messagesEndRef = useRef(null);
   const streamingIntervalRef = useRef(null);
@@ -1476,7 +1482,8 @@ const ChatBot = ({ onLogout, user, isAuthenticated, isGuest, onNavigate, onUpdat
 
   // Confirm and execute deletion
   const confirmDeleteConversation = async (convId) => {
-    const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+    // Use shared API base URL; fallback to same-origin if no env is provided
+    // This avoids incorrect localhost fallback when frontend is proxied to backend.
 
     // Show loading state
     setConversations((prev) =>
@@ -1487,7 +1494,9 @@ const ChatBot = ({ onLogout, user, isAuthenticated, isGuest, onNavigate, onUpdat
 
     if (isAuthenticated && !isGuest) {
       try {
-        const response = await fetch(`${apiBaseUrl}/api/conversations/${convId}`, {
+        const requestUrl = resolveApiUrl(`/api/conversations/${convId}`);
+        console.log('[ChatBot] Deleting conversation via', requestUrl, 'convId=', convId);
+        const response = await fetch(requestUrl, {
           method: 'DELETE',
           credentials: 'include',
           headers: {
@@ -1583,7 +1592,8 @@ const ChatBot = ({ onLogout, user, isAuthenticated, isGuest, onNavigate, onUpdat
         const formData = new FormData();
         formData.append('file', file);
         
-        const response = await fetch('http://localhost:3001/api/upload-file', {
+        const apiUrl = import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, '') || '';
+        const response = await fetch(`${apiUrl}/api/upload-file`, {
           method: 'POST',
           body: formData,
         });
@@ -2082,7 +2092,7 @@ const ChatBot = ({ onLogout, user, isAuthenticated, isGuest, onNavigate, onUpdat
         ? `Generate a SHORT (2-4 words max) memorable chat title in English for this conversation:\n\n${contextMessages}\n\nRespond ONLY with the title, nothing else. No quotes, no explanation.`
         : `Generate a SHORT (2-4 words max) memorable chat title in Indonesian for this conversation:\n\n${contextMessages}\n\nRespond ONLY with the title, nothing else. No quotes, no explanation.`;
 
-      const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+      const apiBaseUrl = import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, '') || '';
       const response = await fetch(`${apiBaseUrl}/api/chat`, {
         method: 'POST',
         headers: {
@@ -3006,13 +3016,61 @@ const ChatBot = ({ onLogout, user, isAuthenticated, isGuest, onNavigate, onUpdat
       return `__CODE_BLOCK_${index}__`;
     });
     
+    // Extract markdown tables - Handle || as row separator
+    const tableBlocks = [];
+    
+    // Strategy: Convert format like "| Name | Age || John | 30 || Jane | 25 |"
+    // Into proper markdown table with headers, separator, and data rows
+    if (processedText.includes('||')) {
+      console.log('[TABLE EXTRACT] Detected || pattern - converting to markdown table...');
+      
+      // Find table-like text: starts with |, contains ||, ends with |
+      const tablePattern = /\|(?:[^|]|\|(?!\|))+\|\|(?:[^|]|\|(?!\|))+(?:\|\|(?:[^|]|\|(?!\|))+)*\|/g;
+      const matches = processedText.match(tablePattern) || [];
+      
+      for (const tableStr of matches) {
+        console.log(`[TABLE EXTRACT] Found potential table: ${tableStr.substring(0, 50)}...`);
+        
+        // Split by || to get rows
+        const rows = tableStr.split('||').map(r => r.trim());
+        
+        if (rows.length >= 2) {
+          // First row is header, rest are data
+          const firstRow = rows[0].split('|').map(c => c.trim()).filter(c => c && c !== '-');
+          
+          if (firstRow.length >= 2) {
+            console.log(`[TABLE EXTRACT] Header columns: ${firstRow.length}`);
+            
+            // Build proper markdown table
+            let markdown = `| ${firstRow.join(' | ')} |\n`;
+            markdown += `|${firstRow.map(() => '---|').join('')}\n`;
+            
+            // Add data rows
+            for (let i = 1; i < rows.length; i++) {
+              const dataRow = rows[i].split('|').map(c => c.trim()).filter(c => c && c !== '-');
+              if (dataRow.length === firstRow.length) {
+                markdown += `| ${dataRow.join(' | ')} |\n`;
+              }
+            }
+            
+            const tableIndex = tableBlocks.length;
+            tableBlocks.push({ type: 'table', content: markdown });
+            console.log(`[TABLE EXTRACT] Created table ${tableIndex}: ${firstRow.length} cols x ${rows.length - 1} data rows`);
+            
+            // Replace with placeholder
+            processedText = processedText.replace(tableStr, `__TABLE_BLOCK_${tableIndex}__`);
+          }
+        }
+      }
+    }
+    
     // Protect placeholders before markdown rendering
     let processedTextWithProtection = processedText;
     const placeholderMap = new Map();
     let placeholderCounter = 0;
     
-    // Replace __CODE_BLOCK_X__, __CHART_BLOCK_X__, and __FORMULA_BLOCK_X__ with safe markers
-    processedTextWithProtection = processedTextWithProtection.replace(/(__CODE_BLOCK_\d+__|__CHART_BLOCK_\d+__|__FORMULA_BLOCK_\d+__)/g, (match) => {
+    // Replace __CODE_BLOCK_X__, __TABLE_BLOCK_X__, __CHART_BLOCK_X__, and __FORMULA_BLOCK_X__ with safe markers
+    processedTextWithProtection = processedTextWithProtection.replace(/(__CODE_BLOCK_\d+__|__TABLE_BLOCK_\d+__|__CHART_BLOCK_\d+__|__FORMULA_BLOCK_\d+__)/g, (match) => {
       const safeMarker = `<<PLACEHOLDER_${placeholderCounter}>>`;
       placeholderMap.set(safeMarker, match);
       placeholderCounter++;
@@ -3027,8 +3085,21 @@ const ChatBot = ({ onLogout, user, isAuthenticated, isGuest, onNavigate, onUpdat
       .trim();
     
     // Restore placeholders after markdown cleaning
+    console.log(`[DEBUG] Before restoration - ${placeholderMap.size} placeholders to restore`);
+    let restorationCount = 0;
     for (const [marker, original] of placeholderMap.entries()) {
-      cleanedText = cleanedText.replace(marker, original);
+      const before = cleanedText;
+      cleanedText = cleanedText.replaceAll(marker, original);
+      if (before !== cleanedText) {
+        restorationCount++;
+      }
+    }
+    console.log(`[DEBUG] Restored ${restorationCount}/${placeholderMap.size} placeholders`);
+    console.log(`[DEBUG] Placeholder map keys: ${Array.from(placeholderMap.values()).slice(0, 3).join(', ')}`);
+    if (cleanedText.includes('__TABLE_BLOCK_')) {
+      console.log(`[DEBUG] ✓ cleanedText now contains __TABLE_BLOCK__ markers`);
+    } else if (tableBlocks.length > 0) {
+      console.log(`[DEBUG] ⚠ cleanedText does NOT contain __TABLE_BLOCK__ markers after restoration!`);
     }
     
     // Normalize separator lines like --- so they become explicit paragraphs
@@ -3037,14 +3108,19 @@ const ChatBot = ({ onLogout, user, isAuthenticated, isGuest, onNavigate, onUpdat
       .replace(/\n_{3,}\n/g, '\n\n---\n\n')
       .replace(/\n\*{3,}\n/g, '\n\n---\n\n');
 
-    // Restore code blocks and formulas with proper formatting
+    // Restore code blocks, tables, and formulas with proper formatting
     const result = [];
-    const parts = cleanedText.split(/(__CODE_BLOCK_\d+__|__CHART_BLOCK_\d+__|__FORMULA_BLOCK_\d+__)/g);
+    const parts = cleanedText.split(/(__CODE_BLOCK_\d+__|__TABLE_BLOCK_\d+__|__CHART_BLOCK_\d+__|__FORMULA_BLOCK_\d+__)/g);
     
-    const renderMarkdownSegment = (markdownText, key) => (
+    const renderMarkdownSegment = (markdownText, key) => {
+      // DEBUG: Log what markdown text is being rendered
+      if (markdownText && markdownText.includes('|')) {
+        console.log('[MARKDOWN DEBUG] Text with pipes going to ReactMarkdown:', markdownText.substring(0, 200).replace(/\n/g, '\\n'));
+      }
+      return (
       <div key={key} className="message-paragraph">
         <ReactMarkdown
-          remarkPlugins={[remarkGfm]}
+          remarkPlugins={[]}
           components={{
             a: ({ href, children }) => (
               <a href={href} target="_blank" rel="noreferrer" className="message-link">
@@ -3061,7 +3137,13 @@ const ChatBot = ({ onLogout, user, isAuthenticated, isGuest, onNavigate, onUpdat
             li: ({ children }) => <li className="message-list-item">{children}</li>,
             ul: ({ children }) => <ul className="message-list">{children}</ul>,
             ol: ({ children }) => <ol className="message-list">{children}</ol>,
-            table: ({ children }) => <div className="table-container"><table className="markdown-table">{children}</table></div>,
+            table: ({ children }) => {
+              console.log('[MARKDOWN DEBUG] Table component rendered!');
+              return <div className="table-container"><table className="markdown-table">{children}</table></div>;
+            },
+            thead: ({ children }) => <thead>{children}</thead>,
+            tbody: ({ children }) => <tbody>{children}</tbody>,
+            tr: ({ children }) => <tr>{children}</tr>,
             th: ({ children }) => <th>{children}</th>,
             td: ({ children }) => <td>{children}</td>,
             img: ({ src, alt }) => <img src={src} alt={alt} className="inline-markdown-image" />,
@@ -3071,9 +3153,11 @@ const ChatBot = ({ onLogout, user, isAuthenticated, isGuest, onNavigate, onUpdat
         </ReactMarkdown>
       </div>
     );
+    };
 
     for (const part of parts) {
       const codeMatch = part.match(/__CODE_BLOCK_(\d+)__/);
+      const tableMatch = part.match(/__TABLE_BLOCK_(\d+)__/);
       const chartMatch = part.match(/__CHART_BLOCK_(\d+)__/);
       const formulaMatch = part.match(/__FORMULA_BLOCK_(\d+)__/);
       
@@ -3167,6 +3251,66 @@ const ChatBot = ({ onLogout, user, isAuthenticated, isGuest, onNavigate, onUpdat
             </code>
           );
         }
+      } else if (tableMatch) {
+        // Render table
+        const tableIndex = parseInt(tableMatch[1]);
+        const tableData = tableBlocks[tableIndex];
+        if (tableData) {
+          const lines = tableData.content
+            .split('\n')
+            .map(l => l.trim())
+            .filter(l => l && l.includes('|'));
+          
+          if (lines.length >= 2) {
+            // Parse header
+            const headerCells = lines[0]
+              .split('|')
+              .map(c => c.trim())
+              .filter(c => c && !/^[\-:]+$/.test(c));
+            
+            // Find separator row (contains dashes)
+            let separatorIdx = 1;
+            for (let i = 1; i < lines.length; i++) {
+              if (/^[\s\|\-:]+$/.test(lines[i].replace(/\s/g, ''))) {
+                separatorIdx = i;
+                break;
+              }
+            }
+            
+            // Parse data rows
+            const dataRows = lines.slice(separatorIdx + 1).map(line =>
+              line
+                .split('|')
+                .map(c => c.trim())
+                .filter(c => c && !/^[\-:]+$/.test(c))
+            );
+            
+            console.log(`[TABLE RENDER] ✓ Rendering table: ${headerCells.length} cols, ${dataRows.length} rows`);
+            
+            result.push(
+              <div key={`table-${tableIndex}`} className="table-container">
+                <table className="markdown-table">
+                  <thead>
+                    <tr>
+                      {headerCells.map((cell, idx) => (
+                        <th key={`h-${idx}`}>{cell}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {dataRows.map((row, rIdx) => (
+                      <tr key={`r-${rIdx}`}>
+                        {row.map((cell, cIdx) => (
+                          <td key={`c-${rIdx}-${cIdx}`}>{cell}</td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            );
+          }
+        }
       } else if (chartMatch) {
         // Render chart
         const chartData = chartBlocks[parseInt(chartMatch[1])];
@@ -3185,6 +3329,7 @@ const ChatBot = ({ onLogout, user, isAuthenticated, isGuest, onNavigate, onUpdat
           .replace(/<<PLACEHOLDER_\d+>>/g, '')
           .replace(/__FORMULA_BLOCK_\d+__/g, '')
           .replace(/__CODE_BLOCK_\d+__/g, '')
+          .replace(/__TABLE_BLOCK_\d+__/g, '')
           .replace(/__CHART_BLOCK_\d+__/g, '')
           .trim();
 
@@ -4706,6 +4851,27 @@ Pastikan selalu gunakan tags <reasoning></reasoning> yang tepat.`;
           onTouchEnd={handleMessageMouseUp}
           style={{ marginBottom: message.sender === 'user' && !expandedUserMessageId === message.id ? '32px' : '0' }}
         >
+          {/* Agentic execution UI - rendered outside message-content to prevent layout conflicts */}
+          {message.sender === 'bot' && !message.isImage && (() => {
+            const execFlow = executionFlows[message.id];
+            const stepper = agenticSteppers[message.id];
+            return (
+              <>
+                {execFlow && execFlow.steps && execFlow.steps.length > 0 && (
+                  <ExecutionFlow 
+                    steps={execFlow.steps}
+                    isComplete={execFlow.isComplete}
+                    totalTime={execFlow.totalTime}
+                    title={execFlow.title || "🤖 Orion berfikir..."}
+                  />
+                )}
+                {stepper && stepper.length > 0 && (
+                  <StepperComponent steps={stepper} />
+                )}
+              </>
+            );
+          })()}
+          
           <div className="message-content">
             {message.isImage && (
               <>
@@ -4776,22 +4942,9 @@ Pastikan selalu gunakan tags <reasoning></reasoning> yang tepat.`;
             )}
             {message.sender === 'bot' && !message.isImage && (() => {
               const { reasoning, mainContent } = extractReasoningContent(message.text);
-              const stepper = agenticSteppers[message.id]; // Get stepper progress for this message
-              const execFlow = executionFlows[message.id]; // Get execution flow for this message
               
               return (
                 <>
-                  {execFlow && execFlow.steps && execFlow.steps.length > 0 && (
-                    <ExecutionFlow 
-                      steps={execFlow.steps}
-                      isComplete={execFlow.isComplete}
-                      totalTime={execFlow.totalTime}
-                      title={execFlow.title || "🤖 Orion berfikir..."}
-                    />
-                  )}
-                  {stepper && stepper.length > 0 && (
-                    <StepperComponent steps={stepper} />
-                  )}
                   {reasoning && (
                     message.isStreaming ? (
                       <div className="message-reasoning">
