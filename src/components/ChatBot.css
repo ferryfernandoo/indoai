@@ -2222,6 +2222,23 @@
   display: none;
 }
 
+/* Message container with execution UI separation */
+.message {
+  display: flex;
+  flex-direction: column;
+  word-wrap: break-word;
+  animation: slideIn 0.3s ease-out;
+  position: relative;
+  gap: 0;
+}
+
+/* Ensure execution flow and stepper don't affect message-content layout */
+.message > .execution-flow-container {
+  flex-shrink: 0;
+  width: 100%;
+  box-sizing: border-box;
+}
+
 .message-content {
   padding: 0;
   border-radius: 0;
@@ -2236,6 +2253,9 @@
   margin-left: 40px;
   min-width: 0;
   overflow: auto;
+  width: 100%;
+  box-sizing: border-box;
+  flex: 1;
 }
 
 .message-paragraph {
