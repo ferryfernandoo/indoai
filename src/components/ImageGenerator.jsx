@@ -94,6 +94,32 @@ const ImageGenerator = ({ isOpen, onClose, prompt, userLanguage = 'id', referenc
     }
   };
 
+  const handleImageError = (e) => {
+    console.error('[ImageGenerator] 🖼️ Image load error - URL:', generatedImageUrl);
+    console.error('[ImageGenerator] 🖼️ Error event:', e);
+    console.error('[ImageGenerator] 🖼️ Image element:', e.target);
+    
+    // Try to fetch the image to see what error we get
+    fetch(generatedImageUrl)
+      .then(res => {
+        console.log('[ImageGenerator] 🖼️ Fetch response status:', res.status, res.statusText);
+        console.log('[ImageGenerator] 🖼️ Content-Type:', res.headers.get('Content-Type'));
+        return res.blob();
+      })
+      .then(blob => {
+        console.log('[ImageGenerator] 🖼️ Blob size:', blob.size, 'Type:', blob.type);
+      })
+      .catch(fetchErr => {
+        console.error('[ImageGenerator] 🖼️ Fetch error:', fetchErr.message);
+      });
+    
+    setError(`${userLanguage === 'id' ? 'Gagal memuat gambar' : 'Failed to load image'} - URL: ${generatedImageUrl}`);
+  };
+
+  const handleImageLoad = () => {
+    console.log('[ImageGenerator] ✅ Image loaded successfully - URL:', generatedImageUrl);
+  };
+
   const handleRetry = () => {
     setHasGenerated(false);
     setGeneratedImageUrl(null);
@@ -143,7 +169,13 @@ const ImageGenerator = ({ isOpen, onClose, prompt, userLanguage = 'id', referenc
               </div>
 
               <div className="image-container">
-                <img src={generatedImageUrl} alt="Generated" className="generated-image" />
+                <img 
+                  src={generatedImageUrl} 
+                  alt="Generated" 
+                  className="generated-image"
+                  onError={handleImageError}
+                  onLoad={handleImageLoad}
+                />
               </div>
 
               <div className="action-buttons">
