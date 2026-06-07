@@ -5306,6 +5306,26 @@ Pastikan selalu gunakan tags <reasoning></reasoning> yang tepat.`;
                             }}
                             onMouseEnter={(e) => e.target.style.transform = 'scale(1.1)'}
                             onMouseLeave={(e) => e.target.style.transform = 'scale(1)'}
+                            onError={(e) => {
+                              console.error('[ChatBot] ❌ Image thumbnail load error:', img.fileName, 'URL:', img.publicUrl);
+                              // Try to fetch and check if file exists
+                              if (img.publicUrl) {
+                                fetch(img.publicUrl, { method: 'HEAD' })
+                                  .then(res => {
+                                    console.log('[ChatBot] 🔍 Image fetch HEAD response:', res.status, res.statusText);
+                                    console.log('[ChatBot] 🔍 Content-Type:', res.headers.get('Content-Type'));
+                                  })
+                                  .catch(err => console.error('[ChatBot] 🔍 Image fetch error:', err.message));
+                              }
+                              // Fallback: use dataUrl if publicUrl fails
+                              if (img.dataUrl && e.target.src !== img.dataUrl) {
+                                console.log('[ChatBot] 📷 Falling back to local dataUrl');
+                                e.target.src = img.dataUrl;
+                              }
+                            }}
+                            onLoad={() => {
+                              console.log('[ChatBot] ✅ Image thumbnail loaded:', img.fileName);
+                            }}
                           />
                         </div>
                       ))}
@@ -6936,6 +6956,20 @@ Pastikan selalu gunakan tags <reasoning></reasoning> yang tepat.`;
                 src={enlargedImage.url} 
                 alt={enlargedImage.alt}
                 className="enlarged-image"
+                onError={(e) => {
+                  console.error('[ChatBot] ❌ Enlarged image load error:', enlargedImage.url);
+                  fetch(enlargedImage.url, { method: 'HEAD' })
+                    .then(res => {
+                      console.log('[ChatBot] 🔍 Enlarged image fetch HEAD:', res.status, res.statusText);
+                      console.log('[ChatBot] 🔍 Content-Type:', res.headers.get('Content-Type'));
+                      console.log('[ChatBot] 🔍 Content-Length:', res.headers.get('Content-Length'));
+                    })
+                    .catch(err => console.error('[ChatBot] 🔍 Enlarged image fetch error:', err.message));
+                  e.target.parentElement.innerHTML = `<div style="padding: 20px; text-align: center; color: red;">❌ ${userLanguage === 'id' ? 'Gagal memuat gambar' : 'Failed to load image'}</div>`;
+                }}
+                onLoad={() => {
+                  console.log('[ChatBot] ✅ Enlarged image loaded:', enlargedImage.url);
+                }}
               />
             </div>
 
