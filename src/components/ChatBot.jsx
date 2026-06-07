@@ -5166,6 +5166,17 @@ Pastikan selalu gunakan tags <reasoning></reasoning> yang tepat.`;
                           onMouseEnter={(e) => e.target.style.transform = 'scale(1.02)'}
                           onMouseLeave={(e) => e.target.style.transform = 'scale(1)'}
                           title={userLanguage === 'id' ? 'Klik untuk membesar' : 'Click to enlarge'}
+                          onError={(e) => {
+                            console.error('[ChatBot] 🖼️ Image load error in chat - URL:', message.imageUrl, 'MessageID:', message.id);
+                            console.error('[ChatBot] 🖼️ Image error element:', e.target);
+                            fetch(message.imageUrl)
+                              .then(res => {
+                                console.log('[ChatBot] 🖼️ Fetch response:', res.status, res.statusText);
+                                return res.blob();
+                              })
+                              .catch(err => console.error('[ChatBot] 🖼️ Fetch error:', err.message));
+                          }}
+                          onLoad={() => console.log('[ChatBot] ✅ Image loaded in chat - URL:', message.imageUrl)}
                         />
                       </div>
                     )}
