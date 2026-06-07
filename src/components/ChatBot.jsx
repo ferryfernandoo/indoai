@@ -2852,13 +2852,22 @@ const ChatBot = ({ onLogout, user, isAuthenticated, isGuest, onNavigate, onUpdat
         reasoning = incompleteMatch[1].trim();
         // Remove from <reasoning> onwards
         mainContent = text.substring(0, incompleteMatch.index).trim();
+      } else {
+        // Try to detect "Pertanyaan: ... Analisis:" pattern (when model provides analysis without tags)
+        // This pattern matches from "Pertanyaan:" at the start until we hit a numbered list or main answer
+        const pertanyaanAnalisisMatch = text.match(/^(Pertanyaan:[\s\S]*?Analisis:[\s\S]*?)(?=\n\n[A-Z]|^(?=[1-5]\.))/m);
+        if (pertanyaanAnalisisMatch) {
+          // Extract the analysis section as reasoning
+          reasoning = pertanyaanAnalisisMatch[1].trim();
+          // Remove the analysis section from main content
+          mainContent = text.replace(pertanyaanAnalisisMatch[0], '').trim();
+        }
       }
     }
     
     // Clean all remaining reasoning tags from mainContent
     mainContent = mainContent.replace(/<\/?reasoning>/gi, '').trim();
     
-    // Apply filtering to reasoning
     if (reasoning) {
       reasoning = filterSensitiveReasoning(reasoning);
     }
@@ -5095,13 +5104,29 @@ Pastikan selalu gunakan tags <reasoning></reasoning> yang tepat.`;
                       const reasoning = reasoningMatch ? reasoningMatch[1] : '';
                       return (
                         <>
-                          <button
-                            className="reasoning-collapsed-text"
-                            onClick={() => setExpandedReasoningId(expandedReasoningId === message.id ? null : message.id)}
-                            title="Klik untuk lihat reasoning lengkap"
-                          >
-                            💭 Ngedumel selama {message.generationTime || 0}s
-                          </button>
+                          <div style={{ marginBottom: '12px' }}>
+                            <button
+                              className="reasoning-collapsed-text"
+                              onClick={() => setExpandedReasoningId(expandedReasoningId === message.id ? null : message.id)}
+                              title="Klik untuk lihat reasoning lengkap"
+                              style={{
+                                width: '100%',
+                                textAlign: 'left',
+                                padding: '10px 12px',
+                                background: 'rgba(59, 130, 246, 0.08)',
+                                border: '1px solid rgba(59, 130, 246, 0.2)',
+                                borderRadius: '6px',
+                                cursor: 'pointer',
+                                fontSize: '13px',
+                                fontWeight: '500',
+                                color: '#1e40af',
+                                transition: 'all 0.2s ease',
+                                display: 'block'
+                              }}
+                            >
+                              💭 Ngedumel selama {message.generationTime || 0}s
+                            </button>
+                          </div>
                           {expandedReasoningId === message.id && (
                             <div className="message-reasoning">
                               <div className="reasoning-window">
@@ -5185,13 +5210,29 @@ Pastikan selalu gunakan tags <reasoning></reasoning> yang tepat.`;
                         </div>
                       </div>
                     ) : (
-                      <button
-                        className="reasoning-collapsed-text"
-                        onClick={() => setExpandedReasoningId(expandedReasoningId === message.id ? null : message.id)}
-                        title="Klik untuk lihat reasoning lengkap"
-                      >
-                        💭 Ngedumel mikir selama {message.reasoningDuration || 0}s
-                      </button>
+                      <div style={{ marginBottom: '12px' }}>
+                        <button
+                          className="reasoning-collapsed-text"
+                          onClick={() => setExpandedReasoningId(expandedReasoningId === message.id ? null : message.id)}
+                          title="Klik untuk lihat reasoning lengkap"
+                          style={{
+                            width: '100%',
+                            textAlign: 'left',
+                            padding: '10px 12px',
+                            background: 'rgba(59, 130, 246, 0.08)',
+                            border: '1px solid rgba(59, 130, 246, 0.2)',
+                            borderRadius: '6px',
+                            cursor: 'pointer',
+                            fontSize: '13px',
+                            fontWeight: '500',
+                            color: '#1e40af',
+                            transition: 'all 0.2s ease',
+                            display: 'block'
+                          }}
+                        >
+                          💭 Ngedumel mikir selama {message.reasoningDuration || 0}s
+                        </button>
+                      </div>
                     )
                   )}
                   {mainContent ? formatMessageText(mainContent, message.isStreaming, message.id) : null}
