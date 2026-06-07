@@ -83,8 +83,8 @@ nano /root/agent/.env
 nano /home/apps/deepernova/.env
 
 # Add:
-DEEPSEEK_API_KEY=sk-bf333936dd084c5f9016521b1b896610
-VITE_DEEPSEEK_API_KEY=sk-bf333936dd084c5f9016521b1b896610
+DEEPSEEK_API_KEY=sk-27ae19fc93a74092a0e78be80c31be8e
+VITE_DEEPSEEK_API_KEY=sk-27ae19fc93a74092a0e78be80c31be8e
 # ... semua keys dari .env.example
 
 # Save & restart
